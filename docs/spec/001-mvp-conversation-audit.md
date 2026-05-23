@@ -402,6 +402,7 @@ audit_result:
 7. Skill Step 7 — Audit trail persistence:
    - Append JSON line to ~/.conversation-audit-trail.jsonl
    - Each line is a complete audit_result with audit_id + timestamp
+   - **Future-substrate note**: the audit trail is the substrate for v1.5+ execution-guided refinement (cross-audit pattern detection, domain-inferred profile suggestions, longitudinal drift analysis) — see Ning et al. (2026) "Code for Environment Modeling" pillar. v0.1.0 writes the trail without consuming it; v1.5+ adds the feedback loop on top.
 
 8. Skill Step 8 — Render report:
    - Default: terminal-friendly markdown
