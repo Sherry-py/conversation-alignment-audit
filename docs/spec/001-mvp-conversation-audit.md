@@ -66,6 +66,27 @@ The dominant industry view — articulated by Anthropic — holds that Harness g
 
 This positioning is non-negotiable across all surfaces (SKILL, Streamlit, MCP, audit service).
 
+### Pattern: Hook-as-Skill
+
+The product instantiates a new conceptual unit: **Hook-as-Skill** — the **Hook pattern** packaged in the **Anthropic Skills distribution format**.
+
+**The Hook pattern** (probabilistic LLM generation + deterministic post-validation) is now well-established in production agent systems for code-level and resource-level concerns: Lint Hooks, Format Hooks, Cost Hooks, Safety Hooks. The same pattern at the *semantic governance* layer — where the validation logic is the 4D-CQ verdict rule — is what this product implements. The convergence is documented in independent industry implementations: Anthropic Claude Code hooks (English-language framing), the Alibaba Gaode autonomous growth pipeline's "评审与生成彻底分离" + "零信任" principles (Chinese-language framing), and the broader "概率性生成 + 确定性校验" architectural consensus.
+
+**The Skills distribution format** (Anthropic, 2025–2026) was designed for Capability packaging — markdown with YAML frontmatter, loaded by Claude Code on demand. The format is structurally suitable for Hook packaging: the SKILL.md body can encode validation logic, verdict rule, evidence schema, and dimension prompts; the frontmatter can declare triggers, allowed tools, and version. Using Skills as the distribution mechanism gives Hook semantics open distribution, composability with other Skills, fork-friendliness, and externality from any single LLM substrate.
+
+**Hook-as-Skill** as a conceptual unit:
+
+| Property | How this product realises it |
+|---|---|
+| Distributable | Open-source SKILL.md, installable via git clone or curl; future-marketplace listing |
+| Composable | Loadable alongside other Skills in the same Claude Code session |
+| Fork-friendly | Markdown-first; custom thresholds via profile YAML; custom dimensions via spec extension |
+| Externalised | Verdict rule lives in SKILL.md (deterministic), not absorbed into LLM weights |
+| Cross-vendor | Same SKILL.md works wherever Claude Code or compatible runtimes exist |
+| Citation-anchored | 4D-CQ framework cited in every verdict output (Lian, 2026, *I&M*) |
+
+**Implication for build conventions**: every architectural choice in this spec — single-LLM-call dimension scoring (Q1 default), profile-parameterised thresholds, canonical transcript format, structured turn-referenced evidence — should be evaluated against the question "does this preserve Hook-as-Skill properties, or does it dilute them?"
+
 ---
 
 ## §users — Target user tiers

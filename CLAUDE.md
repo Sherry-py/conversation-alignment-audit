@@ -12,10 +12,13 @@ This file is read by Claude Code on every session in this repo. Keep it dense, n
 A **pre-execution governance layer** for conversations (human-human or human-AI).
 A **SKILL.md product** (markdown-first), distributed via the Claude Code skills marketplace + GitHub.
 
+**Architectural pattern: Hook-as-Skill.** The product packages the **Hook pattern** (probabilistic LLM generation gated by deterministic post-validation, after Anthropic Claude Code hooks and the broader agent-engineering pattern of "probabilistic generation + deterministic validation") using the **Anthropic Skills distribution format**. The Skills format was designed for Capability packaging; this product uses the same format to package Hook semantics. The result is a new conceptual unit — Hook-as-Skill — distributed, composable, fork-friendly, and externalized from any single LLM substrate.
+
 **What it is NOT**:
 - Not an agent (does not act on the conversation)
 - Not a summarizer (does not condense; it evaluates)
 - Not a vibes-check (verdict is rule-driven, not LLM-decided)
+- Not an orchestrator (does not coordinate multiple agents; it gates a single decision point)
 
 Theory basis: Paper 1 "When Knowing Is Not Enough" (under review at *Information & Management*, ABS 3). The paper shows LLMs achieve ~92% diagnostic accuracy but a ~41.4pp diagnostic-authorization gap. This product enforces what the paper recommends architecturally.
 
