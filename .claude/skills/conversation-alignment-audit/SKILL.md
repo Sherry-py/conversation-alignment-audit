@@ -701,3 +701,109 @@ Robustness is the dimension most prone to **misclassification of deferral as agr
 - Calibration via `examples/03-interview.md` — known ground truth: Cara drives substantive content (turns 1-22); Raj and Elena defer at turns 26-27 ("+1"); should produce score < 0.5
 
 ---
+
+## Step 5 — Verdict computation (deterministic)
+
+This step is **purely deterministic**. **No LLM call.** No model reasoning. Just rule evaluation against scored dimensions.
+
+This deterministic separation is invariant **I7 (external enforceability)** — the verdict logic must live outside the LLM substrate. The dimension evaluators (Steps 1-4) used the LLM for scoring (the diagnostic layer); Step 5 uses pure code for verdict (the authorization layer). The architectural separation is non-negotiable.
+
+### Profile registry (default profiles)
+
+```yaml
+profiles:
+  strict:
+    critical_threshold: 0.75      # high bar for CRITICAL dimensions
+    non_critical_threshold: 0.80   # high bar for NON-CRITICAL dimensions
+    use_case: "Medical decisions, financial transactions, regulatory submissions, executive strategy, board-level decisions"
+    
+  standard:
+    critical_threshold: 0.60      # default
+    non_critical_threshold: 0.70   # default
+    use_case: "Most professional meetings, interviews, planning sessions, due diligence"
+    
+  lenient:
+    critical_threshold: 0.50      # lower bar for early-stage / exploratory
+    non_critical_threshold: 0.60
+    use_case: "Brainstorming, ideation, exploratory discussion, low-stakes decisions"
+```
+
+**Profile selection (Step 0 input)**:
+- If user specified `--profile NAME`, load that profile from registry
+- If user specified `--profile <path-to-yaml>`, load custom profile from YAML file
+- Default if unspecified: `standard`
+
+**Per-dimension override syntax** (custom profile YAML):
+```yaml
+profile:
+  name: medical_second_opinion
+  critical_threshold: 0.75
+  non_critical_threshold: 0.65
+  dimension_overrides:
+    coverage:   { threshold: 0.85 }    # tighter than profile default
+    ordering:   { threshold: 0.55 }    # looser than profile default
+```
+
+### Verdict rule φ — pseudocode
+
+```python
+def compute_verdict(scores: dict, profile: Profile) -> Verdict:
+    """
+    Apply verdict rule φ. Pure function. No I/O. No LLM call.
+    Returns one of: PASS | CLARIFY | REFUSE
+    """
+    # Read thresholds from profile (per-dimension override takes precedence)
+    critical_t      = profile.critical_threshold
+    non_critical_t  = profile.non_critical_threshold
+    
+    relevance_t    = profile.dimension_overrides.get('relevance',   {}).get('threshold', critical_t)
+    coverage_t     = profile.dimension_overrides.get('coverage',    {}).get('threshold', critical_t)
+    ordering_t     = profile.dimension_overrides.get('ordering',    {}).get('threshold', non_critical_t)
+    robustness_t   = profile.dimension_overrides.get('robustness',  {}).get('threshold', non_critical_t)
+    
+    # Step 5a: Normalize null / NaN scores to 0.0 (worst-case fallback per I3)
+    relevance   = 0.0 if (scores['relevance']  is None or isnan(scores['relevance']))  else scores['relevance']
+    coverage    = 0.0 if (scores['coverage']   is None or isnan(scores['coverage']))   else scores['coverage']
+    ordering    = 0.0 if (scores['ordering']   is None or isnan(scores['ordering']))   else scores['ordering']
+    robustness  = 0.0 if (scores['robustness'] is None or isnan(scores['robustness'])) else scores['robustness']
+    
+    # Step 5b: CRITICAL failures dominate — return REFUSE immediately
+    if relevance < relevance_t or coverage < coverage_t:
+        return Verdict.REFUSE
+    
+    # Step 5c: NON-CRITICAL failures secondary — return CLARIFY
+    if ordering < ordering_t or robustness < robustness_t:
+        return Verdict.CLARIFY
+    
+    # Step 5d: All thresholds met — PASS
+    return Verdict.PASS
+```
+
+### Edge cases (explicit)
+
+| Condition | Verdict | Notes |
+|---|---|---|
+| All scores ≥ all thresholds | **PASS** | Normal happy path |
+| Any CRITICAL score < its threshold | **REFUSE** | CRITICAL dominates regardless of NON-CRITICAL |
+| All CRITICAL ≥ thresholds, any NON-CRITICAL < its threshold | **CLARIFY** | |
+| Both CRITICAL and NON-CRITICAL fail | **REFUSE** | CRITICAL dominates |
+| Any score is `null` / `NaN` (LLM evaluator failed) | Treated as `0.0` | Conservative fallback per I3 |
+| Schema validation failed twice in Steps 1-4 | **REFUSE** + `evaluation_incomplete: true` flag | Surface to user |
+| User-supplied profile resolves but is malformed | **REFUSE** + `evaluation_incomplete: true` + `blocking_failures: profile_invalid` | Step 0 should have caught; fallback safety net |
+
+### Verdict severity ordering (for ambiguous cases)
+
+When multiple conditions match: **REFUSE > CLARIFY > PASS**. The strictest applicable verdict wins. This is the conservative bias — over-flagging is preferable to under-flagging in pre-execution governance contexts.
+
+### No LLM in this step
+
+Step 5 must remain pure code. Do **not** delegate the verdict decision to an LLM, even in edge cases. If new edge cases emerge during Phase 3 calibration, add explicit deterministic rules here — do not introduce LLM judgment into the verdict layer. This invariant is what distinguishes the product architecturally from "harness absorption" approaches where the model decides authorization.
+
+### Output to next steps
+
+After Step 5 produces a verdict:
+- Step 6 reads verdict + dimension evidence to extract drift signals
+- Step 7 persists verdict + metadata to audit trail
+- Step 8 renders verdict + evidence + drift signals as markdown report
+
+---
