@@ -357,3 +357,82 @@ On re-audit of the same transcript, the adapter checks for an existing cache and
 When canonical validation passes, store the canonical object and proceed to Steps 1-4 (dimension evaluation). All subsequent steps operate exclusively on `transcript_canonical` — never on the original external content. This is invariant I8.
 
 ---
+
+## Step 1 — Relevance evaluation [CRITICAL]
+
+**Question:** Does the conversation discuss the stated objective?
+
+**Criticality**: CRITICAL. Failure of this dimension shifts the verdict to REFUSE — regardless of how well the other dimensions score.
+
+### LLM evaluator prompt
+
+The skill issues the following prompt to the LLM, with template variables filled from the canonical transcript and the user-supplied objective:
+
+```
+You are evaluating one dimension of a conversation alignment audit: RELEVANCE.
+
+OBJECTIVE OF THE CONVERSATION:
+{objective.statement}
+
+ADDITIONAL CONTEXT (may be empty):
+{objective.context}
+
+PARTICIPANTS:
+{render_participants(canonical.participants)}
+  (format: "P1: Alice", "P2: Bob", ...)
+
+CONVERSATION (canonical turns within scoring window):
+{render_turns(canonical.turns_in_window)}
+  (format: "Turn 1 (P1): <text>", "Turn 2 (P2): <text>", ...)
+
+YOUR TASK:
+1. Determine to what extent the conversation actually discusses the stated objective.
+2. A score of 1.0 means every substantive turn is on-topic.
+3. A score of 0.0 means the conversation never reaches the objective, drifts entirely, or discusses something unrelated.
+4. Intermediate scores reflect partial topical coverage, with drift portions documented in evidence.
+5. Cite specific turn_numbers as evidence — both for turns that ARE on-topic (positive evidence) and turns that drift away (negative evidence, if any).
+6. Quote 1-3 representative spans, each with turn_number, speaker_id, and text excerpt of up to 50 words.
+7. Provide a 1-2 sentence rationale explaining the score.
+
+OUTPUT FORMAT — JSON only, no commentary, matching this schema exactly:
+
+{
+  "dimension": "relevance",
+  "score": <float in [0.0, 1.0], two decimal places>,
+  "evidence": {
+    "turn_numbers": [<int>, ...],
+    "quoted_spans": [
+      {"turn": <int>, "speaker_id": "<P1|P2|...>", "quote": "<text>"}
+    ]
+  },
+  "rationale": "<one or two sentences>"
+}
+
+CRITICAL CONSTRAINTS:
+- Every turn_number cited MUST exist in the conversation above.
+- Do not invent turn numbers. Do not cite spans outside the canonical turns.
+- Do not return commentary, explanation, or markdown outside the JSON object.
+```
+
+### Post-processing
+
+1. Parse LLM output as JSON. On parse failure → retry once with appended instruction: `"Your previous output was not valid JSON: <error>. Return ONLY a valid JSON object."`
+2. Validate schema:
+   - `score` is a float in `[0.0, 1.0]`
+   - `evidence.turn_numbers` is a list of ints, all of which exist in `canonical.turns` (within scoring window)
+   - `evidence.quoted_spans` is a list of `{turn, speaker_id, quote}` objects; each `turn` must appear in `turn_numbers`; each `speaker_id` must reference `canonical.participants`
+   - `rationale` is a non-empty string
+3. On persistent schema failure → set `score = 0.0`, `evaluation_incomplete = true`, and proceed (the worst-case fallback ensures conservative verdict, consistent with invariant I3).
+4. Store the validated result as `scores.relevance` for use in Step 5 (verdict computation).
+
+### Notes for prompt iteration (Phase 3 calibration)
+
+If empirical scores cluster narrowly (e.g., always 0.7-0.9), iterate the prompt before iterating the threshold. Possible prompt adjustments:
+
+- Tighten the score-anchor rubric (define what 0.3, 0.5, 0.7 look like with examples).
+- Strengthen the "drift" framing (some LLMs default to charitable interpretation; force them to count off-topic turns explicitly).
+- Add a worked example in the prompt (one positive, one negative) to anchor the scale.
+
+Prompt iteration is the high-leverage knob; threshold tuning is the surface knob.
+
+---
