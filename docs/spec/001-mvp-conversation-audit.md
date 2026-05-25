@@ -534,6 +534,26 @@ These layers are mentioned here so the build does not foreclose them. v0.1.0 shi
 - Custom dimension definitions
 - Paid Substack tier
 
+### Out of scope (planned for v0.2 — Discovery mode architectural extension)
+
+The same 4D-CQ + verdict rule φ engine inverts naturally into a **Discovery mode**: given a context, enumerate candidate objectives and return those for which the context PASSes the audit.
+
+- **v0.1 invocation** (this spec): `/conversation-alignment-audit <transcript> <objective>` → 1 verdict for 1 (context, objective) pair
+- **v0.2 invocation** (Discovery mode): `/conversation-discover <context> [--candidate-objectives <list> | --auto-generate]` → ranked list of objectives the context can authorize
+
+This is the **bidirectional inversion of Hook-as-Skill**. Same engine, inverted invocation pattern:
+
+| Mode | Question answered | Market served |
+|---|---|---|
+| **Audit** (v0.1) | "Given this objective, is the context sufficient to authorize action?" | High-stakes decisions awaiting confidence check (consulting / due-diligence / board) — narrow but high-ACV |
+| **Discovery** (v0.2) | "Given this context, what objectives can it authorize?" | Knowledge surplus + action uncertainty — universal pain point (researchers, consultants, professionals in transition, founders) |
+
+**Architectural reuse**: same 4D-CQ framework, same verdict rule φ, same canonical schema. The L3 engine (per invariant I5) needs no modification; v0.2 ships as a new invocation wrapper around the existing engine.
+
+**Implication for v0.1 build conventions**: every architectural choice in this spec should preserve the option to layer Discovery mode on top later. In particular, the engine must remain callable with arbitrary `(context, objective)` pairs without internal coupling to a specific invocation pattern.
+
+Reserved for v0.2. Not in v0.1.0 deliverable.
+
 ### Out of scope (planned for v2.0+)
 
 - Python library implementation of the L3 engine (currently markdown-only)
