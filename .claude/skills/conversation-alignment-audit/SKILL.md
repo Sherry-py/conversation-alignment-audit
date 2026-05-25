@@ -1,26 +1,32 @@
 ---
-name: gatefix-audit
-version: 1.0.0
+name: conversation-alignment-audit
+version: 0.1.0
 description: |
-  GateFix AI Agent Governance Audit. Analyzes an AI agent system to identify
-  high-risk commit points, evaluate current governance state against the 4D-CQ
-  framework (Relevance, Coverage, Ordering, Robustness), and produce a
-  risk-ranked governance report with ICAG measurement setup.
-  
-  Invoke when: user wants to audit an AI agent deployment, identify where AI
-  actions are irreversible, assess governance gaps before production deployment,
-  or prepare a GateFix pilot engagement.
+  Pre-execution audit of multi-turn conversations against a stated objective
+  using the 4D-CQ framework (Relevance, Coverage, Ordering, Robustness).
+  Returns a deterministic verdict (PASS / CLARIFY / REFUSE) with structured
+  turn-referenced evidence. Operates entirely on the local machine; no
+  conversation data leaves the user's computer.
+
+  Invoke when: user has a transcript of a meeting, interview, due-diligence
+  call, board discussion, or other multi-turn conversation and wants a
+  rigorous, theoretically-grounded audit of whether the conversation is
+  ready to convert into action.
+
+  Theory anchor: Lian (2026), "When Knowing Is Not Enough" — under review
+  at Information & Management.
 allowed-tools:
-  - Bash
   - Read
-  - Glob
-  - WebSearch
+  - Write
+  - Bash
 triggers:
-  - gatefix audit
-  - audit my agent
-  - find commit points
-  - governance audit
-  - where are the risks in my agent
+  - audit this conversation
+  - alignment audit
+  - conversation alignment
+  - 4D-CQ audit
+  - is this meeting ready for decision
+  - audit transcript
+  - audit this meeting
 ---
 
 ## GateFix Audit Skill
