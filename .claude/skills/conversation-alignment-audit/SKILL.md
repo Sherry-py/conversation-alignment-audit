@@ -616,3 +616,88 @@ Ordering is the dimension most prone to **false negatives** (LLM misses sequenci
 - Calibration via `examples/02-due-diligence.md` — known ground truth: conclusion at turn 8 before financial review at turns 18-25 should produce score < 0.6
 
 ---
+
+## Step 4 — Robustness evaluation [NON-CRITICAL]
+
+**Question:** Is the conclusion stable across reasonable participant or framing variation?
+
+**Criticality**: NON-CRITICAL. Failure shifts the verdict to CLARIFY — the conclusion may still be correct, but its support is fragile.
+
+Robustness catches the **conclusion-contingent-on-dominant-voice** failure mode: decisions that depend entirely on one participant's enthusiastic framing, with other participants deferring rather than contributing independent assessment. The classic anti-pattern is the "+1" deferral pattern in hiring panels (one strong advocate + others rubber-stamping without independent evaluation).
+
+### LLM evaluator prompt
+
+```
+You are evaluating one dimension of a conversation alignment audit: ROBUSTNESS.
+
+OBJECTIVE OF THE CONVERSATION:
+{objective.statement}
+
+ADDITIONAL CONTEXT (may be empty):
+{objective.context}
+
+PARTICIPANTS:
+{render_participants(canonical.participants)}
+
+CONVERSATION (canonical turns within scoring window):
+{render_turns(canonical.turns_in_window)}
+
+YOUR TASK:
+1. Consider the conclusion or direction the conversation is heading toward.
+2. Run counterfactual probes — would the conclusion change if:
+   - Any single participant had been absent? (especially the dominant voice)
+   - A different framing of the objective had been used?
+   - A known objection or alternative perspective had been raised but wasn't?
+   - The order of speakers had been reversed?
+3. Look for fragility patterns, including:
+   - One participant drives most substantive content; others defer or "+1" without independent assessment
+   - Conclusion depends on the specific way the objective was framed (would change with different framing)
+   - Absence of dissent or steelmanned counter-arguments
+   - No participant independently arrives at the same conclusion via different reasoning
+4. Score in [0.0, 1.0]:
+   - 1.0 = conclusion holds under variation (multiple participants independently support; conclusion robust to framing changes; objections addressed)
+   - 0.0 = conclusion entirely contingent (single dominant voice; others rubber-stamp; conclusion would collapse if framing changed)
+   - Intermediate = partial robustness with specific fragility points
+5. Cite turn_numbers where fragility appears (or where independent assessment exists if score is high).
+6. Quote 1-3 spans showing the most consequential robustness issues (e.g., deferral patterns, framing dependencies).
+7. Provide a 1-2 sentence rationale, naming the specific fragility pattern when detected.
+
+OUTPUT FORMAT — JSON only, matching this schema exactly:
+
+{
+  "dimension": "robustness",
+  "score": <float in [0.0, 1.0]>,
+  "evidence": {
+    "turn_numbers": [<int>, ...],
+    "quoted_spans": [
+      {"turn": <int>, "speaker_id": "<P1|P2|...>", "quote": "<text>"}
+    ]
+  },
+  "rationale": "<one or two sentences>"
+}
+
+CRITICAL CONSTRAINTS:
+- Every turn_number cited MUST exist in the conversation above.
+- Robustness ≠ correctness: a single voice may be correct on the merits, but the conclusion is still fragile if no one else independently validated it.
+- Robustness ≠ unanimity: unanimous agreement can be fragile if it stems from deferral rather than independent assessment.
+- Treat "+1" / "agreed" / "I trust X's read" as deferral signals, NOT as independent endorsement.
+- Return ONLY the JSON object. No commentary.
+```
+
+### Post-processing
+
+1. Parse LLM output as JSON. Retry pattern same as Step 1.
+2. Schema-validate (score in [0,1], turn_numbers ⊆ canonical.turns within scoring window).
+3. On persistent failure → `score = 0.0`, `evaluation_incomplete = true`.
+4. Store result as `scores.robustness` for Step 5 (verdict computation).
+
+### Notes for prompt iteration (Phase 3 calibration)
+
+Robustness is the dimension most prone to **misclassification of deferral as agreement** — the LLM tends to read "+1" or "agreed" as endorsement when it is actually deferral.
+
+- If LLM gives uniformly high scores on consensus conversations → strengthen the "deferral signals" list in the prompt; require explicit detection of independent reasoning paths
+- If LLM flags too many polite agreements as fragility → tighten by requiring substantive content from at least 2-3 participants for high robustness, not just non-dissent
+- Single-participant transcripts (monologues): Robustness should be flagged N/A or score automatically capped at 0.5 (cannot evaluate counterfactual participant variation)
+- Calibration via `examples/03-interview.md` — known ground truth: Cara drives substantive content (turns 1-22); Raj and Elena defer at turns 26-27 ("+1"); should produce score < 0.5
+
+---
