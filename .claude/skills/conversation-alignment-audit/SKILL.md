@@ -539,3 +539,80 @@ Coverage is the trickiest dimension to calibrate well because the LLM must INFER
 - Calibration via the strategy meeting example transcript (see `examples/01-strategy-meeting.md`) — known ground truth: financial viability + ≤$50M cap + due diligence findings should appear in `missing`
 
 ---
+
+## Step 3 — Ordering evaluation [NON-CRITICAL]
+
+**Question:** Is the discussion sequence coherent enough to support valid conclusions?
+
+**Criticality**: NON-CRITICAL. Failure shifts the verdict to CLARIFY (not REFUSE) — the conversation is recoverable through clarification, not structurally invalid.
+
+Ordering catches the **premature commitment** failure mode: conclusions reached before evidence is reviewed, decisions made before alternatives are weighed, topic shifts without bridging logic. The classic anti-pattern is "we should invest" stated at turn 8, followed by financial diligence reviewed at turns 18-25 — evidence used to confirm rather than test the conclusion.
+
+### LLM evaluator prompt
+
+```
+You are evaluating one dimension of a conversation alignment audit: ORDERING.
+
+OBJECTIVE OF THE CONVERSATION:
+{objective.statement}
+
+ADDITIONAL CONTEXT (may be empty):
+{objective.context}
+
+CONVERSATION (canonical turns within scoring window):
+{render_turns(canonical.turns_in_window)}
+
+YOUR TASK:
+1. Examine the sequence of turns. Evaluate whether the discussion order supports valid conclusions.
+2. Look for ordering failures, including:
+   - Conclusion stated BEFORE supporting evidence is reviewed (premature commitment)
+   - Decision reached BEFORE alternatives are weighed
+   - Topic shifts without bridging logic (jumps without connection)
+   - Action items decided BEFORE constraints are surfaced
+   - Recommendation made BEFORE risks are examined
+3. Score in [0.0, 1.0]:
+   - 1.0 = sequence supports the conclusion (context-first, decision-last)
+   - 0.0 = sequence undermines the conclusion (decision-first, evidence-after)
+   - Intermediate = mixed sequencing, with specific ordering failures enumerated
+4. Cite turn_numbers where ordering failures occur (or where exemplary sequencing exists if score is high).
+5. Quote 1-3 spans demonstrating the most consequential ordering issues.
+6. Provide a 1-2 sentence rationale, ideally naming the specific anti-pattern detected.
+
+OUTPUT FORMAT — JSON only, matching this schema exactly:
+
+{
+  "dimension": "ordering",
+  "score": <float in [0.0, 1.0]>,
+  "evidence": {
+    "turn_numbers": [<int>, ...],
+    "quoted_spans": [
+      {"turn": <int>, "speaker_id": "<P1|P2|...>", "quote": "<text>"}
+    ]
+  },
+  "rationale": "<one or two sentences>"
+}
+
+CRITICAL CONSTRAINTS:
+- Every turn_number cited MUST exist in the conversation above.
+- Distinguish ordering failures (sequence problems) from coverage failures (missing items). Ordering is about WHEN things were discussed, not WHETHER they were discussed.
+- A conversation can score high on Ordering even if its conclusion is wrong — Ordering evaluates sequence quality, not conclusion correctness.
+- Return ONLY the JSON object. No commentary.
+```
+
+### Post-processing
+
+1. Parse LLM output as JSON. Retry pattern same as Step 1.
+2. Schema-validate (score in [0,1], turn_numbers ⊆ canonical.turns within scoring window).
+3. On persistent failure → `score = 0.0`, `evaluation_incomplete = true`.
+4. Store result as `scores.ordering` for Step 5 (verdict computation).
+
+### Notes for prompt iteration (Phase 3 calibration)
+
+Ordering is the dimension most prone to **false negatives** (LLM misses sequencing problems) because the LLM defaults to charitable interpretation of human conversations.
+
+- If LLM gives uniformly high scores → strengthen prompt with explicit anti-pattern definitions (especially "premature commitment")
+- If LLM flags too many micro-shifts as ordering failures → tighten threshold for what counts as a real ordering problem (must affect conclusion validity, not just be a topic change)
+- Distinguish from Coverage: a transcript missing financial discussion entirely is a Coverage gap; the same transcript with financial discussion at the WRONG time (after the decision) is an Ordering gap
+- Calibration via `examples/02-due-diligence.md` — known ground truth: conclusion at turn 8 before financial review at turns 18-25 should produce score < 0.6
+
+---
