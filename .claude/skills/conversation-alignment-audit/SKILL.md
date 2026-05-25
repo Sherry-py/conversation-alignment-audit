@@ -436,3 +436,106 @@ If empirical scores cluster narrowly (e.g., always 0.7-0.9), iterate the prompt 
 Prompt iteration is the high-leverage knob; threshold tuning is the surface knob.
 
 ---
+
+## Step 2 — Coverage evaluation [CRITICAL]
+
+**Question:** Are the facts, perspectives, and constraints required to validly act on the stated objective present in the conversation?
+
+**Criticality**: CRITICAL. Failure shifts the verdict to REFUSE.
+
+Coverage is the dimension most directly responsible for catching the *missing financial figures / missing due diligence / missing dissenting perspective* class of failures that participants rarely surface in real-time but that retrospective audit can identify. Its output includes an explicit `missing` list — the structural anchor for the caller's iteration pattern (see §iteration-pattern).
+
+### LLM evaluator prompt
+
+```
+You are evaluating one dimension of a conversation alignment audit: COVERAGE.
+
+OBJECTIVE OF THE CONVERSATION:
+{objective.statement}
+
+ADDITIONAL CONTEXT (may be empty):
+{objective.context}
+
+PARTICIPANTS:
+{render_participants(canonical.participants)}
+
+CONVERSATION (canonical turns within scoring window):
+{render_turns(canonical.turns_in_window)}
+
+YOUR TASK:
+1. Identify what facts, perspectives, constraints, or evidence would be REQUIRED to validly act on the stated objective. Be specific. Examples of required items:
+   - quantitative figures (e.g., "Q3 actual revenue", "target acquisition price")
+   - documents or sources (e.g., "due diligence findings", "regulatory filing")
+   - perspectives (e.g., "engineering team capacity", "legal compliance view")
+   - constraints (e.g., "budget cap", "deadline", "regulatory exposure")
+2. For each required item, mark whether it is PRESENT (substantively addressed in the conversation) or MISSING (absent or only superficially mentioned).
+3. Score in [0.0, 1.0]:
+   - 1.0 = all required items present and substantively addressed
+   - 0.0 = most required items absent
+   - Intermediate = partial coverage, with absent items enumerated
+4. Cite turn_numbers where required items ARE addressed (positive evidence).
+5. List MISSING items by name (these become the calibration prompts in the audit_result).
+6. Quote 1-3 spans demonstrating coverage of the items that ARE present.
+7. Provide a 1-2 sentence rationale.
+
+OUTPUT FORMAT — JSON only, matching this schema exactly:
+
+{
+  "dimension": "coverage",
+  "score": <float in [0.0, 1.0]>,
+  "evidence": {
+    "turn_numbers": [<int>, ...],
+    "quoted_spans": [
+      {"turn": <int>, "speaker_id": "<P1|P2|...>", "quote": "<text>"}
+    ]
+  },
+  "missing": [
+    "<short specific name of missing item>",
+    "<...>"
+  ],
+  "rationale": "<one or two sentences>"
+}
+
+CRITICAL CONSTRAINTS:
+- Items in "missing" must be things the OBJECTIVE actually requires — not nice-to-have or tangentially related.
+- Every turn_number cited MUST exist in the conversation above.
+- Do not invent items as missing if they are not implied by the objective.
+- Return ONLY the JSON object. No commentary.
+```
+
+### Post-processing
+
+1. Parse LLM output as JSON. On parse failure → retry once with appended instruction (per Step 1 pattern).
+2. Validate schema:
+   - `score` is a float in `[0.0, 1.0]`
+   - `evidence.turn_numbers` ⊆ canonical.turns (within scoring window)
+   - `evidence.quoted_spans` validates per Step 1
+   - `missing` is a list of strings (may be empty if score is high; non-empty when score is low)
+   - `rationale` is non-empty
+3. On persistent schema failure → `score = 0.0`, `missing = ["evaluation_incomplete: schema_failure"]`, `evaluation_incomplete = true`.
+4. Store result as `scores.coverage` for Step 5 (verdict computation).
+5. The `missing` list is also copied into `audit_result.blocking_failures` if the final verdict is REFUSE (giving the caller actionable calibration prompts — see §iteration-pattern).
+
+### Calibration linkage
+
+The `missing` field is the bridge between the diagnostic layer (LLM scoring) and the caller's iteration loop. A REFUSE verdict triggered by Coverage failure should produce a `blocking_failures` entry of the form:
+
+```
+"Coverage X.XX < threshold Y.YY. Required items absent from transcript:
+  - <missing item 1>
+  - <missing item 2>
+  - ..."
+```
+
+The caller (user or upstream agent) reads this, augments the input, and re-invokes the skill. This is the v0.1 iteration pattern; v1.5+ ships a wrapper skill for automated loop management (see §iteration-pattern at the end of this file).
+
+### Notes for prompt iteration (Phase 3 calibration)
+
+Coverage is the trickiest dimension to calibrate well because the LLM must INFER what the objective requires, not just match what is present.
+
+- If LLM over-lists `missing` items (false positives for missing) → tighten prompt to require items be "implied by the objective" not "potentially relevant to the topic"
+- If LLM under-lists `missing` items → add explicit examples of required item types in the prompt (quantitative / source / perspective / constraint categories)
+- If `missing` items are too vague (e.g., "more context") → require each missing item to be a specific named entity, document, figure, or perspective
+- Calibration via the strategy meeting example transcript (see `examples/01-strategy-meeting.md`) — known ground truth: financial viability + ≤$50M cap + due diligence findings should appear in `missing`
+
+---
