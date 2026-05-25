@@ -1,0 +1,18 @@
+{
+  "example_source": "examples/02-due-diligence.md",
+  "expected_verdict": "CLARIFY",
+  "expected_failing_dimensions": ["ordering"],
+  "expected_scores": {
+    "relevance": {"target": 0.88, "tolerance": 0.10},
+    "coverage": {"target": 0.72, "tolerance": 0.10},
+    "ordering": {"target": 0.45, "tolerance": 0.10},
+    "robustness": {"target": 0.65, "tolerance": 0.10}
+  },
+  "tolerance_for_extra_failing_dimensions": "acceptable",
+  "pass_criteria": [
+    "verdict matches expected_verdict",
+    "expected_failing_dimensions all flagged below threshold",
+    "all scores within tolerance of target",
+    "premature commitment pattern explicitly identified in ordering rationale or drift_signals"
+  ]
+}

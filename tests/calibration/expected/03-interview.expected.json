@@ -1,0 +1,18 @@
+{
+  "example_source": "examples/03-interview.md",
+  "expected_verdict": "CLARIFY",
+  "expected_failing_dimensions": ["robustness"],
+  "expected_scores": {
+    "relevance": {"target": 0.90, "tolerance": 0.10},
+    "coverage": {"target": 0.68, "tolerance": 0.15},
+    "ordering": {"target": 0.75, "tolerance": 0.10},
+    "robustness": {"target": 0.40, "tolerance": 0.10}
+  },
+  "tolerance_for_extra_failing_dimensions": "acceptable",
+  "pass_criteria": [
+    "verdict matches expected_verdict",
+    "expected_failing_dimensions all flagged below threshold",
+    "all scores within tolerance of target",
+    "deferral pattern ('+1', 'trust her read', 'aligned with Cara') explicitly cited in robustness evidence"
+  ]
+}
