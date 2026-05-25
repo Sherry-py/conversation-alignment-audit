@@ -180,3 +180,180 @@ The audit trail is **still written** on validation failure (records the failed-v
 When all five validation checks pass, store the validated inputs and proceed to Step 0.5 (Adapter).
 
 ---
+
+## Step 0.5 — Adapter: external format → canonical
+
+The user-provided transcript can be in any of several formats. All downstream steps (1-8) operate on the **canonical** transcript representation only — never on the raw external content. This is invariant I8 (canonical-first). Step 0.5 is the only place where external format adaptation happens.
+
+The skill ships three adapters in v0.1.0: `plain_tagged`, `markdown_tagged`, `json_explicit`. Additional adapters (Otter, Zoom, VTT/SRT, YouTube) are deferred to v1.5+.
+
+### Format auto-detection
+
+When `format_hint` is null or `auto`, detect format from content heuristics in this priority order:
+
+1. **`json_explicit`** — content (after `strip()`) starts with `[` and parses as a JSON array of objects each having `speaker` and `text` keys
+2. **`markdown_tagged`** — content has ≥ 2 lines matching the pattern `^\*\*[A-Za-z0-9_\- ]+:\*\*` (bold name followed by colon)
+3. **`plain_tagged`** — content has ≥ 2 lines matching the pattern `^[A-Za-z0-9_\- ]{1,40}:\s` (name followed by colon and whitespace)
+4. **Ambiguous** — no rule matches with confidence → enter ambiguity protocol
+
+If `format_hint` is explicitly set by the user, skip auto-detection and use the specified adapter directly.
+
+### Adapter A — `plain_tagged`
+
+**Input pattern:**
+
+```
+Alice: Let's open with quarterly numbers.
+Bob: Q3 revenue is up 12% year-over-year.
+Alice: What about churn?
+Bob: We don't have the latest cohort data yet.
+```
+
+**Parse steps:**
+
+1. Split content by line breaks.
+2. For each non-empty line, attempt to match `^([A-Za-z0-9_\- ]{1,40}):\s*(.*)$`.
+   - If match: extract `speaker_name = group(1).strip()` and `text = group(2).strip()`. Start a new turn.
+   - If no match: treat as continuation — append the line to the most recent turn's `text` field (joined with a space).
+3. Build the participant table:
+   - For each unique `speaker_name` encountered, assign an id `P{n}` (1-indexed in encounter order).
+   - `participants[i] = { id: "P{i+1}", display_name: speaker_name, role: null }`.
+4. Re-write each turn's `speaker_id` to the participant id (the original `speaker_name` is preserved only in `participants[].display_name`).
+5. Number turns starting at 1, contiguous.
+6. Compute metadata: `total_turns`, `total_chars` (sum of all turn texts), `language` (best-effort detection: `en` / `zh` / `mixed` / null).
+
+### Adapter B — `markdown_tagged`
+
+**Input pattern:**
+
+```markdown
+**Alice:** Let's open with quarterly numbers.
+
+**Bob:** Q3 revenue is up 12% year-over-year.
+
+**Alice:** What about churn?
+```
+
+**Parse steps:**
+
+1. Split content by the regex boundary `\*\*([A-Za-z0-9_\- ]{1,40}):\*\*` (capturing the name).
+2. Each split chunk is the text of the turn introduced by the preceding name capture.
+3. Trim whitespace and markdown artifacts (leading/trailing newlines, stray asterisks) from each turn text.
+4. Apply the same participant mapping as Adapter A (steps 3-6).
+
+**Variant:** also accepts heading-style markdown (`## Alice` or `### Alice` followed by paragraph text). If the content starts with markdown headings rather than bold-colon tags, detect and parse accordingly.
+
+### Adapter C — `json_explicit`
+
+**Input pattern:**
+
+```json
+[
+  {"speaker": "Alice", "text": "Let's open with quarterly numbers.", "ts": "2026-05-23T10:00:00Z"},
+  {"speaker": "Bob", "text": "Q3 revenue is up 12% year-over-year."},
+  {"speaker": "Alice", "text": "What about churn?"}
+]
+```
+
+**Parse steps:**
+
+1. Parse the content as JSON. On parse failure, fall through to ambiguity protocol.
+2. Validate structure: must be an array, each element must have `speaker` (string) and `text` (string). Optional fields: `ts` (ISO-8601 timestamp).
+3. Iterate elements in array order. Each element becomes one turn.
+4. Apply the same participant mapping as Adapter A.
+5. If `ts` is present, copy to `turns[i].timestamp`. Otherwise set to null.
+
+### Ambiguity protocol
+
+If the adapter cannot unambiguously parse the input, **pause and ask the user** — do not guess silently. Three common ambiguity cases:
+
+**Case 1 — Multiple speaker tag styles in the same transcript** (e.g., both `Alice:` and `A:` appear):
+
+```
+The transcript uses two speaker tag styles:
+- "Alice:" (in 8 turns)
+- "A:" (in 3 turns)
+Are these the same speaker? (yes / no / merge differently)
+```
+
+**Case 2 — No speaker tags detected:**
+
+```
+I could not detect speaker tags in this transcript. Options:
+1. Treat as single-speaker monologue (Robustness dimension will be flagged N/A)
+2. Insert speaker tags manually and re-invoke
+3. Abort
+Which option?
+```
+
+**Case 3 — Failed JSON parse with `json_explicit` hint:**
+
+```
+JSON parse failed at character N: <error>. Options:
+1. Switch to plain_tagged adapter and re-attempt
+2. Show me the error context for manual fix
+3. Abort
+Which option?
+```
+
+### Canonical output schema
+
+The adapter produces a canonical transcript object that downstream steps consume:
+
+```yaml
+transcript_canonical:
+  source:
+    format_detected: "plain_tagged" | "markdown_tagged" | "json_explicit"
+    original_size_chars: int
+  participants:
+    - { id: "P1", display_name: "Alice", role: null }
+    - { id: "P2", display_name: "Bob",   role: null }
+  turns:
+    - { turn_number: 1, speaker_id: "P1", text: "...", timestamp: null }
+    - { turn_number: 2, speaker_id: "P2", text: "...", timestamp: null }
+  metadata:
+    total_turns: int
+    total_chars: int
+    language: "en" | "zh" | "mixed" | null
+    duration_sec: null
+```
+
+### Canonical validation
+
+After adapter output, verify:
+
+1. **Participants non-empty** — at least one participant in the table.
+2. **Turns non-empty** — at least one turn.
+3. **Turn numbers contiguous** — `turn_number` starts at 1, increments by 1 per turn, no gaps.
+4. **Speaker references valid** — every `speaker_id` in `turns` exists in `participants[].id`.
+5. **All turn texts non-empty** — no zero-length `text` fields after trimming.
+
+On validation failure: retry adapter once; on persistent failure, return `REFUSE` with `evaluation_incomplete: true` and `blocking_failure: canonical_validation_failed`.
+
+### Truncation policy (very long transcripts)
+
+If `transcript_canonical.metadata.total_turns > 200`:
+
+- **Canonical itself is never truncated.** The full canonical object is preserved (and persisted alongside the original for re-audit).
+- **Dimension scoring uses a scoring window:** first 10 turns (objective-setting context) + last 30 turns (conclusion context).
+- The window choice is recorded in `audit_result.metadata.scoring_window = "first_10_last_30"`.
+- Evidence citations from dimension evaluators must reference turns within the scoring window; cited turns outside the window are invalid and trigger evaluation retry.
+
+For transcripts under 200 turns, the scoring window is the entire canonical (`scoring_window = "full"`).
+
+### Caching
+
+After successful adapter parse, cache the canonical object alongside the original transcript:
+
+```
+<original_path>.canonical.json    # canonical schema as JSON
+<original_path>.canonical.meta    # adapter metadata + parse timestamp
+```
+
+On re-audit of the same transcript, the adapter checks for an existing cache and skips re-parsing if the original file's mtime is unchanged. This makes iterative calibration runs fast.
+
+### Proceed
+
+When canonical validation passes, store the canonical object and proceed to Steps 1-4 (dimension evaluation). All subsequent steps operate exclusively on `transcript_canonical` — never on the original external content. This is invariant I8.
+
+---
