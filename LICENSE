@@ -1,0 +1,64 @@
+Conversation Alignment Audit — Dual License
+
+Copyright (c) 2026 Sherry Lian (连希蕊)
+
+================================================================================
+PART A — MIT LICENSE
+For personal, academic, research, and non-commercial use.
+================================================================================
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction for personal, academic, research, and
+non-commercial use, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software for these purposes, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+PART B — COMMERCIAL LICENSE REQUIRED
+For use in client engagements, paid SaaS, or for-profit professional services.
+================================================================================
+
+Commercial use of this software requires a separate license agreement with the
+author. Commercial use includes (but is not limited to):
+
+  1. Use in client engagements by consulting firms, advisory practices, or
+     professional services organizations.
+  2. Bundling into for-profit SaaS products, paid platforms, or commercial
+     offerings.
+  3. Using the 4D-CQ framework, the GateFix methodology, or the verdict rule φ
+     in paid advisory work, consulting deliverables, or commercial training.
+  4. Branding derivative works with the trademarks "GateFix", "4D-CQ", or
+     "Hook-as-Skill" (these terms are reserved).
+  5. Re-distributing the software as part of a commercial product line.
+
+To obtain a commercial license, contact: lxrsherry@gmail.com
+
+The trademarks "GateFix", "4D-CQ", and "Hook-as-Skill" are owned by the author.
+
+================================================================================
+PART C — ATTRIBUTION
+================================================================================
+
+If you use this software or the underlying 4D-CQ framework in published work,
+please cite:
+
+    Lian, X. (2026). When Knowing Is Not Enough: Designing Pre-Execution
+    Governance for LLM Agents in Organizational Systems. Information &
+    Management (under review).
+
+================================================================================
+END OF LICENSE
+================================================================================
