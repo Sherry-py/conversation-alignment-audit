@@ -59,6 +59,20 @@ Framework: 4D-CQ (Lian, 2026, Information & Management)
 
 The model can know. The model can even tell you what is wrong. But the model is not, by itself, the place where the decision to act gets routed through the diagnostic signal. **That routing is what this skill does.**
 
+## Real-world example — All-in Podcast moats discussion
+
+The skill also works on naturally-occurring public content. We audited the AI-moats segment of an [All-in Podcast episode](https://www.youtube.com/watch?v=4Gmd5UTF4rk) (March 2026, 8 minutes, 21 turns) against the objective:
+
+> "Form a defensible view on which AI / tech companies have durable moats in the AI era, and why, given the changing dynamics of brands, network effects, hardware, and agentic AI adoption."
+
+**Verdict: CLARIFY** (Coverage 0.62 / Ordering 0.65 / Robustness 0.68; Relevance 0.78). Three findings the audit surfaced:
+
+1. **Premature anchoring at turn 8** — one host's "brands go to zero" thesis arrived before counter-frames were aired; subsequent Tesla / BYD / LVMH examples functioned as confirming evidence rather than testing the anchor.
+2. **Missing AI-company-specific moat analysis** — the objective explicitly mentions "AI companies", but the discussion defaulted to tech incumbents *using* AI (Apple, Tesla, Meta, Google) rather than companies whose *product is* AI (OpenAI, Anthropic, Nvidia, Perplexity).
+3. **Robustness uneven but not weak** — three of four hosts contributed distinct framings; one host explicitly steelmanned a self-counterargument (exemplary), but the dominant thesis still anchored the conversation.
+
+Full audit output: [`tests/youtube/allin-moats-summary.md`](tests/youtube/allin-moats-summary.md). The audit was run by following each dimension's prompt in `SKILL.md` on the transcript — same engine, same verdict rule, same skill — applied to a real-world conversation rather than a synthetic test case. The skill generalizes.
+
 ## Why this matters
 
 Two empirical observations, from independent sources:
