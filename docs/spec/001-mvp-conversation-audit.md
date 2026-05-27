@@ -66,6 +66,14 @@ The dominant industry view — articulated by Anthropic — holds that Harness g
 
 This positioning is non-negotiable across all surfaces (SKILL, Streamlit, MCP, audit service).
 
+### Connection to recursive self-improvement (RSI) containment
+
+In May 2026, Google CEO Sundar Pichai stated publicly that "if recursive self-improvement emerges, it becomes a societal issue, not one company's call." Google DeepMind's Frontier Safety Framework v3 (April 2026) operationalizes the same concern with capability red lines on AI-accelerating-AI-R&D and misalignment risks where a model interferes with operator control.
+
+Invariant I7 (external enforceability) is the architectural translation of "not one company's call". When the verdict rule lives in deterministic code outside the LLM substrate, the authorization gate becomes inspectable by third parties (regulators, framework owners, auditors, society), versioned as code, and non-negotiable from inside the model. Absorbing the gate into weights — the failure mode this spec rejects — is precisely what would make RSI containment unenforceable: the model would author its own next iteration's authorization criteria.
+
+This product is not a complete RSI containment solution. It operates at the conversation-level and action-authorization-level, not at the model-weight-update level. But the **architectural pattern** — external enforceability, deterministic verdict, third-party inspectability — is the same architectural family that any societal-level governance of frontier capabilities would have to instantiate. Hook-as-Skill is one concrete instance of that pattern, ready to ship and be cited by future work that extends the pattern to higher-stakes contexts.
+
 ### Pattern: Hook-as-Skill
 
 The product instantiates a new conceptual unit: **Hook-as-Skill** — the **Hook pattern** packaged in the **Anthropic Skills distribution format**.
