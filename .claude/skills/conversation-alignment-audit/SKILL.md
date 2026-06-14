@@ -807,3 +807,238 @@ After Step 5 produces a verdict:
 - Step 8 renders verdict + evidence + drift signals as markdown report
 
 ---
+
+## Step 6 — Drift signal extraction
+
+This step is **deterministic post-processing** over the dimension scores (Steps 1-4) and the verdict (Step 5). **No new LLM call.** It re-uses evidence already produced by the dimension evaluators and reshapes it into three caller-facing structures: `drift_signals`, `suggested_clarifications`, and `blocking_failures`. Per invariant I2, this step does not change any score or the verdict — it only organizes evidence that already exists.
+
+### 6a — Drift signals
+
+A drift signal is a structured, turn-localized finding derived from a dimension that scored below (or near) its threshold. Each signal has the schema:
+
+```yaml
+drift_signal:
+  turn_range: { start: <int>, end: <int> }   # span the finding covers; start==end for a point finding
+  type: <controlled vocabulary, see table>
+  severity: "high" | "medium" | "low"
+  description: <one sentence; paraphrase, not a verbatim transcript quote>
+```
+
+**Type is a controlled vocabulary, keyed by the source dimension.** Do not invent new type strings — pick the closest entry. This keeps signals aggregatable across audits (invariant I5, cross-surface portability).
+
+| Source dimension | Allowed `type` values | When to use |
+|---|---|---|
+| Relevance | `topic_drift`, `topic_widening` | conversation moves off the objective / broadens past it |
+| Coverage | `missing_evidence`, `missing_perspective`, `missing_constraint` | a required fact / viewpoint / limit named in `coverage.missing` is absent |
+| Ordering | `premature_commitment`, `premature_anchoring`, `confirmatory_diligence`, `unbridged_topic_shift` | conclusion precedes evidence; evidence used to confirm not test; jump without bridge |
+| Robustness | `conclusion_contingent_on`, `missing_dissent`, `deferral_consensus` | one voice drives; no steelman; "+1" agreement substitutes for independent assessment |
+
+**Generation rule (deterministic):**
+
+1. For each of the four dimensions, compute `gap = threshold - score`.
+2. Emit a drift signal **only if** the dimension scored below its threshold **OR** `gap > -0.03` (i.e. it passed by a razor-thin margin — "just" passed, as in the YouTube demo's Coverage 0.62 vs 0.60). Dimensions that pass comfortably emit no signal.
+3. Map the dimension to a `type` from the table above using the dimension evaluator's `rationale` / `missing` items to disambiguate (e.g. Ordering rationale naming "decided before evidence" → `premature_commitment`).
+4. Set `turn_range` from the dimension's `evidence.turn_numbers` (`start = min`, `end = max`; for Coverage `missing` items with no positive turns, use the span between the first and last on-topic turns where the gap is visible).
+5. Set `severity` deterministically:
+
+```python
+def signal_severity(dimension_is_critical: bool, gap: float) -> str:
+    # gap = threshold - score  (positive means failed)
+    if dimension_is_critical and gap > 0:      # any CRITICAL miss is at least high
+        return "high"
+    if gap >= 0.20:  return "high"
+    if gap >= 0.08:  return "medium"
+    return "low"                                # near-threshold or thin-margin pass
+```
+
+6. Sort signals by severity (high → medium → low), then by `turn_range.start` ascending.
+
+### 6b — Suggested clarifications (CLARIFY verdicts)
+
+Populated **only when `verdict == CLARIFY`**. Each entry is a concrete, executable next step that would let the caller re-run the audit with a stronger substrate — never a vague gesture ("be more rigorous" is forbidden; name the action, the participant, and the artifact).
+
+Derive one clarification per failing NON-CRITICAL dimension, plus one per `medium`/`high` drift signal not already covered:
+
+- `ordering` failure → a clarification that forces the decision to be re-derived *after* evidence (e.g. *"List what evidence WOULD change the lean-yes conclusion before re-deciding; if none exists, the diligence is performative."*).
+- `robustness` failure → a clarification that forces independent assessment (e.g. *"Have each panelist write their recommendation independently BEFORE debrief, then compare."*).
+
+The phrasing pattern that passed calibration: **imperative verb + who does it + what artifact it produces.** See `tests/calibration/run-1/02-due-diligence.audit.jsonl` and `03-interview.audit.jsonl` for the calibrated reference outputs.
+
+### 6c — Blocking failures (REFUSE verdicts)
+
+Populated **only when `verdict == REFUSE`**. One entry per CRITICAL dimension that scored below threshold. Each entry is a single string in this exact shape (so it is parseable and matches the existing trail fixtures):
+
+```
+<Dimension> <score> < threshold <threshold>. Required <items> absent from transcript: <comma-joined coverage.missing items>. <one-sentence re-engagement instruction>.
+```
+
+For a Coverage-triggered REFUSE, the `<items>` come directly from `coverage.missing`. For a Relevance-triggered REFUSE, state the objective the conversation never reached.
+
+### 6d — Mutual exclusivity invariant
+
+Exactly one of the two caller-action lists is non-empty, enforced deterministically:
+
+| verdict | `blocking_failures` | `suggested_clarifications` |
+|---|---|---|
+| PASS | `[]` | `[]` |
+| CLARIFY | `[]` | non-empty |
+| REFUSE | non-empty | `[]` |
+
+If this table is ever violated at runtime, that is an engine bug — fail closed to REFUSE with `evaluation_incomplete: true`.
+
+### Proceed
+
+Attach `drift_signals`, `suggested_clarifications`, and `blocking_failures` to the in-memory `audit_result`. Proceed to Step 7.
+
+---
+
+## Step 7 — Audit trail persistence
+
+This step satisfies invariant **I4 (audit trail mandatory)**. Every run — including validation failures from Step 0 and canonical failures from Step 0.5 — appends exactly one line to `~/.conversation-audit-trail.jsonl`. **No LLM call.**
+
+### 7a — The two artifacts (do not conflate them)
+
+The engine produces one object in two projections. Conflating them is a privacy violation (README: *"transcript content is never persisted to the trail"*).
+
+| Artifact | Contains verbatim spans? | Where it lives | Purpose |
+|---|---|---|---|
+| **Full `audit_result`** | Yes (`evidence.quoted_spans`) | returned to caller; optionally cached at `<transcript_path>.audit.json` | basis for Step 8 report; regression-test target |
+| **Trail record** | **No** (redacted projection) | appended to `~/.conversation-audit-trail.jsonl` | cross-audit pattern detection, longitudinal metadata |
+
+> The reference fixtures in `tests/calibration/run-1/*.audit.jsonl` are **full `audit_result` objects** (that is why they legitimately contain quotes — they are in-repo synthetic test data). The full-result schema below **is** the schema those fixtures follow, so they remain the regression baseline for Steps 1-6. The live trail line is the redacted projection in §7c.
+
+### 7b — Full `audit_result` schema (regression baseline)
+
+This matches `tests/calibration/run-1/*.audit.jsonl` field-for-field:
+
+```yaml
+audit_result:
+  audit_id: <uuid-v4>
+  timestamp: <iso8601>
+  transcript_ref: <original path or "inline">
+  verdict: PASS | CLARIFY | REFUSE
+  evaluation_incomplete: <bool>
+  scores:
+    relevance:  { score, threshold, evidence: { turn_numbers, quoted_spans }, rationale }
+    coverage:   { score, threshold, evidence: { turn_numbers, quoted_spans }, missing: [...], rationale }
+    ordering:   { score, threshold, evidence: { turn_numbers, quoted_spans }, rationale }
+    robustness: { score, threshold, evidence: { turn_numbers, quoted_spans }, rationale }
+  drift_signals: [ <drift_signal>, ... ]
+  suggested_clarifications: [ <string>, ... ]
+  blocking_failures: [ <string>, ... ]
+  framework_citation: "Lian (2026), 4D-CQ Framework, Information & Management (under review)"
+  profile_used: { name, critical_threshold, non_critical_threshold }
+  trail_path: ~/.conversation-audit-trail.jsonl
+```
+
+> Note: the calibration fixtures use `example_source` for the transcript reference field; live runs use `transcript_ref` (same role). A regression harness should treat the two keys as equivalent.
+
+### 7c — Trail record = redacted projection
+
+The line appended to the trail is the full `audit_result` with these transformations:
+
+1. **Strip every `evidence.quoted_spans`** (verbatim transcript content). Retain `turn_numbers` — integer references are metadata, not content.
+2. **Replace `transcript_ref`** with `transcript_hash: <sha256 of canonical JSON>` plus the bare `transcript_ref` path (path is a local filename, not content). The hash lets repeat audits of the same transcript be correlated without storing it.
+3. Retain `scores[*].score/threshold/rationale`, `coverage.missing`, `drift_signals`, `suggested_clarifications`, `blocking_failures`, `profile_used`, verdict, ids, timestamps.
+
+```python
+def to_trail_record(audit_result: dict, canonical_json: str) -> dict:
+    rec = deepcopy(audit_result)
+    for dim in rec.get("scores", {}).values():
+        dim.get("evidence", {}).pop("quoted_spans", None)   # drop verbatim content
+    rec["transcript_hash"] = sha256(canonical_json.encode()).hexdigest()
+    return rec
+```
+
+### 7d — Append protocol
+
+1. Ensure `~/.conversation-audit-trail.jsonl` exists (create with mode `0600` if absent — the trail is private).
+2. Serialize the trail record as a single line of compact JSON (no embedded newlines) and append with a trailing `\n`. Use `Bash` (`>>`) or `Write` in append mode.
+3. The append is **best-effort-durable but mandatory**: if the write fails (disk full, permission denied), surface the error to the user in the Step 8 report (`trail_write_failed: <reason>`) — do **not** silently swallow it. A missing audit row is a governance failure, not a cosmetic one (CLAUDE.md: *"the data is more valuable than the latency"*).
+4. On validation-failure runs (Step 0 / 0.5), write the minimal failure `audit_result` (verdict REFUSE, `evaluation_incomplete: true`) through the same path.
+
+### Proceed
+
+After the trail append, proceed to Step 8 with the full (un-redacted) `audit_result` in memory.
+
+---
+
+## Step 8 — Markdown report rendering
+
+The default user-facing output. **No LLM call** — pure template substitution over the full `audit_result`. When the user passed `--json`, skip this step and emit the full `audit_result` as JSON instead.
+
+### 8a — Report template
+
+```markdown
+# Conversation Alignment Audit — {VERDICT}
+
+> Objective: {objective.statement}
+> Profile: {profile.name} (critical={critical_threshold}, non_critical={non_critical_threshold})
+> Audit ID: {audit_id} · {timestamp}
+
+## Verdict: **{VERDICT}**
+
+| Dimension | Score | Threshold | Status |
+|---|---|---|---|
+| Relevance  | {r.score} | {r.threshold} | {✓ if pass else ✗} |
+| Coverage   | {c.score} | {c.threshold} | {✓ / ✗ / ✓ (just) if 0 ≤ gap_pass < 0.03} |
+| Ordering   | {o.score} | {o.threshold} | {✓ / ✗} |
+| Robustness | {b.score} | {b.threshold} | {✓ / ✗} |
+
+{one-sentence verdict meaning — see 8b}
+
+## What the audit caught
+
+{for each drift_signal, high→low:}
+### {n}. {humanized type} (severity: {severity}) — turns {start}–{end}
+{description}. {if quoted_spans available for that dim: blockquote the most consequential span with its turn number.}
+
+{VERDICT-conditional block — see 8c}
+
+## Drift signals detected
+{for each drift_signal: - `{type}` (severity: {severity}) at turns {start}–{end} — {description}}
+
+---
+Audit logged: {trail_path}{ if trail_write_failed: "  ⚠️ TRAIL WRITE FAILED: {reason}"}
+Framework: 4D-CQ (Lian, 2026, Information & Management)
+```
+
+### 8b — Verdict meaning line (deterministic, per verdict)
+
+- **PASS** — *"The conversation is structurally adequate to authorize action on the stated objective. No critical gaps; non-critical dimensions within tolerance."*
+- **CLARIFY** — *"Critical dimensions pass, but {failing non-critical dimensions} fall below threshold. The conversation is recoverable through re-engagement — not yet strong enough to authorize action."*
+- **REFUSE** — *"{Failing critical dimension} is below threshold ({score} < {threshold}). Authorization is structurally unsafe: the conversation cannot validly support action on this objective until the gap is closed."*
+
+### 8c — Verdict-conditional block
+
+| Verdict | Block heading | Body |
+|---|---|---|
+| REFUSE | `## Blocking failures` | render each `blocking_failures` entry as a bullet; then a `## Suggested next step` line instructing re-engagement + re-audit |
+| CLARIFY | `## Suggested clarifications` | numbered list of `suggested_clarifications` |
+| PASS | `## Notes` | "No blocking issues. {if any low-severity drift signals: list them as advisory.}" |
+
+### 8d — Evidence verbosity
+
+Default: top 3 `quoted_spans` per dimension in the "What the audit caught" blockquotes. With `--verbose-evidence`, render all spans. Every rendered quote must carry its `turn` number (invariant I3 — every claim cites evidence).
+
+The reference rendered reports are `tests/youtube/allin-moats-summary.md` (CLARIFY) and the REFUSE example in `README.md`. A Step 8 implementation is correct when it reproduces that shape from the corresponding `audit_result`.
+
+### Done
+
+The report is the terminal output of the skill for a normal (non-`--json`) run. The skill is **stateless** — it does not loop. Re-auditing after the caller acts on the verdict is the caller's move, described next.
+
+---
+
+## Iteration pattern
+
+> This section is the resolution target for the `§iteration-pattern` references in Steps 2 and 5. The skill is a **single-shot Hook**: it renders one verdict and stops (invariant: stateless). It never re-runs itself. The *loop* lives with the caller.
+
+The v0.1 iteration loop is **manual and caller-driven**:
+
+1. **REFUSE** → the caller reads `blocking_failures` (each names the absent critical items), augments the real-world substrate (gathers the missing financials, re-runs the diligence, invites the missing perspective), then **re-invokes the skill** on the updated transcript. The audit trail (Step 7) records both runs under the same `transcript_hash` lineage, making the before/after closure auditable.
+2. **CLARIFY** → the caller reads `suggested_clarifications` (each is an executable step), performs them (independent write-ups, steelman, stress-test), then re-audits. Typically one CLARIFY round lifts the failing NON-CRITICAL dimension above threshold.
+3. **PASS** → no iteration; the conversation is cleared to authorize action.
+
+**The skill deliberately does not automate this loop.** Automating re-engagement would make the skill an agent that acts on the conversation — which it explicitly is not (README: *"Not an agent"*). The caller (human, or an upstream orchestrator) owns the decision to re-engage. A wrapper skill for automated loop management — reading `blocking_failures`/`suggested_clarifications` and orchestrating re-audits — is deferred to **v1.5+** and is out of scope for the single-shot core.
+
+This is the boundary that keeps the Hook-as-Skill a *gate* and not a *driver*: it routes the diagnostic signal to a verdict and hands control back. The verdict layer lives outside the model (I7); the iteration layer lives outside the skill.
