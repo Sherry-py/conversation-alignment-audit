@@ -6,6 +6,27 @@
 
 ---
 
+> **Status — v0.1 reference implementation.** Engine has known spec gaps surfaced by a 2026-06-14 verification round (7 soft gaps in Step 6 drift derivation rules; verdict-layer behaviour is correct, byte-deterministic fixture reproduction is partial). Marketplace install is available for early adopters; production use is not recommended without follow-up review. See repo issues for tracked gaps.
+
+---
+
+## Install
+
+Via Claude Code marketplace:
+
+```
+/plugin marketplace add https://github.com/Sherry-py/conversation-alignment-audit
+/plugin install conversation-alignment-audit
+```
+
+Or clone for development:
+
+```
+git clone https://github.com/Sherry-py/conversation-alignment-audit
+```
+
+---
+
 ## What it is
 
 A Claude Code SKILL that audits a multi-turn conversation transcript against a stated objective. It returns one of three verdicts:

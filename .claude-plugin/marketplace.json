@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sherry-skills",
+  "description": "Pre-execution governance skills based on the 4D-CQ framework (Lian, 2026, under review at Information & Management)",
+  "owner": {
+    "name": "Xirui (Sherry) Lian",
+    "email": "z5709117@ad.unsw.edu.au"
+  },
+  "plugins": [
+    {
+      "name": "conversation-alignment-audit",
+      "description": "Pre-execution audit of multi-turn conversations against a stated objective using the 4D-CQ framework. Returns a deterministic PASS / CLARIFY / REFUSE verdict before high-stakes decisions are made.",
+      "version": "0.1.0",
+      "author": { "name": "Xirui (Sherry) Lian" },
+      "source": "./",
+      "category": "decision-support",
+      "homepage": "https://github.com/Sherry-py/conversation-alignment-audit",
+      "tags": [
+        "governance",
+        "4d-cq",
+        "context-quality",
+        "decision-audit",
+        "conversation",
+        "pre-execution"
+      ]
+    }
+  ],
+  "version": "0.1.0"
+}

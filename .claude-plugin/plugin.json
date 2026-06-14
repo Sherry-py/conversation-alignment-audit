@@ -1,0 +1,21 @@
+{
+  "name": "conversation-alignment-audit",
+  "version": "0.1.0",
+  "description": "Pre-execution audit of multi-turn conversations against a stated objective using the 4D-CQ framework. Returns a deterministic PASS / CLARIFY / REFUSE verdict.",
+  "author": { "name": "Xirui (Sherry) Lian" },
+  "repository": "https://github.com/Sherry-py/conversation-alignment-audit",
+  "homepage": "https://github.com/Sherry-py/conversation-alignment-audit",
+  "license": "SEE LICENSE",
+  "keywords": [
+    "claude-code",
+    "skill",
+    "governance",
+    "4d-cq",
+    "context-quality",
+    "decision-audit",
+    "conversation"
+  ],
+  "skills": [
+    "./.claude/skills/conversation-alignment-audit/"
+  ]
+}
